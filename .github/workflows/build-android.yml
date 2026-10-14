@@ -2,7 +2,7 @@ name: Construir APK TecnISAC
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,9 +20,8 @@ jobs:
       - run: npx cap add android
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
-      - uses: actions/upload-artifact@v4
+      - uses: softprops/action-gh-release@v2
         with:
-          name: TecnISAC-APK-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+          tag_name: apk-${{ github.run_number }}
+          name: TecnISAC APK ${{ github.run_number }}
+          files: android/app/build/outputs/apk/debug/app-debug.apk
