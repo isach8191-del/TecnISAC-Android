@@ -1,0 +1,213 @@
+
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080d12">
+  <title>TecnISAC IA</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #080d12;
+      color: #f0f5f7;
+      font: 16px/1.5 system-ui, sans-serif;
+    }
+    header {
+      padding: 16px;
+      background: #111a22;
+      border-bottom: 1px solid #293945;
+    }
+    header h1 { margin: 0; color: #32d4b5; }
+    header p { margin: 4px 0 0; color: #9aabb5; font-size: 13px; }
+    #chat {
+      max-width: 760px;
+      margin: auto;
+      padding: 16px;
+      padding-bottom: 120px;
+    }
+    .welcome, .message {
+      padding: 14px;
+      margin-bottom: 12px;
+      border-radius: 13px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .welcome, .bot {
+      background: #111a22;
+      border: 1px solid #293945;
+    }
+    .user {
+      background: #126e61;
+      margin-left: 12%;
+    }
+    .message h3 { margin-top: 0; }
+    #status { color: #9aabb5; font-size: 13px; }
+    form {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      background: #0b1218;
+      border-top: 1px solid #293945;
+    }
+    textarea {
+      flex: 1;
+      min-width: 0;
+      resize: none;
+      max-height: 120px;
+      padding: 12px;
+      color: white;
+      background: #17232d;
+      border: 1px solid #293945;
+      border-radius: 12px;
+      font: inherit;
+    }
+    button {
+      padding: 0 17px;
+      border: 0;
+      border-radius: 12px;
+      background: #32d4b5;
+      color: #04221c;
+      font-weight: bold;
+      font-size: 15px;
+    }
+    button:disabled { opacity: .5; }
+    .actions { margin-top: 12px; }
+    .secondary {
+      padding: 8px 12px;
+      background: #17232d;
+      color: white;
+      border: 1px solid #293945;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⚙ TecnISAC IA</h1>
+    <p>Assistente técnico • Android • Eletrónica • Diagnóstico</p>
+    <div id="status">Pronto para conversar</div>
+    <div class="actions">
+      <button class="secondary" id="clear" type="button">Nova conversa</button>
+    </div>
+  </header>
+
+  <main id="chat" aria-live="polite">
+    <div class="welcome">
+      <h3>Bem-vindo ao TecnISAC!</h3>
+      Escreve a tua dúvida técnica. Vou ajudar-te a analisar o problema e organizar os passos de diagnóstico.
+    </div>
+  </main>
+
+  <form id="form">
+    <textarea id="question" rows="1"
+      placeholder="Escreve a tua pergunta..." required></textarea>
+    <button id="send" type="submit">Enviar</button>
+  </form>
+
+  <script>
+    const API_URL =
+      "https://tecn-isac-android-m7o3-ozhae4i3z-isach8191-del.vercel.app/api/chat";
+
+    const chat = document.getElementById("chat");
+    const form = document.getElementById("form");
+    const question = document.getElementById("question");
+    const send = document.getElementById("send");
+    const status = document.getElementById("status");
+    const clear = document.getElementById("clear");
+
+    let history = [];
+    let busy = false;
+
+    function addMessage(text, type) {
+      const div = document.createElement("div");
+      div.className = "message " + type;
+      div.textContent = text;
+      chat.appendChild(div);
+      div.scrollIntoView({ behavior: "smooth", block: "end" });
+      return div;
+    }
+
+    form.addEventListener("submit", async function(event) {
+      event.preventDefault();
+
+      const message = question.value.trim();
+      if (!message || busy) return;
+
+      busy = true;
+      send.disabled = true;
+      question.disabled = true;
+
+      addMessage(message, "user");
+      question.value = "";
+
+      const previousHistory = history.slice();
+      const waiting = addMessage("A analisar a tua pergunta...", "bot");
+      status.textContent = "A contactar o servidor de IA...";
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: message,
+            history: previousHistory
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.details || data.error ||
+            "Erro HTTP " + response.status);
+        }
+
+        const answer = data.answer || data.text;
+
+        if (!answer) {
+          throw new Error("O servidor não devolveu uma resposta.");
+        }
+
+        waiting.textContent = answer;
+
+        history.push(
+          { role: "user", content: message },
+          { role: "model", content: answer }
+        );
+
+        history = history.slice(-20);
+        status.textContent = "Resposta recebida";
+      } catch (error) {
+        waiting.textContent =
+          "Não foi possível obter uma resposta da IA.\n\n" +
+          error.message +
+          "\n\nVerifica a implantação do servidor e a rota /api/chat.";
+        status.textContent = "Falha na comunicação com a IA";
+      } finally {
+        busy = false;
+        send.disabled = false;
+        question.disabled = false;
+        question.focus();
+      }
+    });
+
+    clear.addEventListener("click", function() {
+      if (busy) return;
+      history = [];
+      chat.replaceChildren();
+
+      const welcome = document.createElement("div");
+      welcome.className = "welcome";
+      welcome.textContent =
+        "Nova conversa iniciada. Qual é a tua dúvida técnica?";
+      chat.appendChild(welcome);
+      status.textContent = "Nova conversa";
+    });
+  </script>
+</body>
+</html>
