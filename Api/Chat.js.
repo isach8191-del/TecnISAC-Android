@@ -1,0 +1,129 @@
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Utilize o método POST para enviar perguntas."
+    });
+  }
+
+  try {
+    const { message, history } = req.body || {};
+
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({
+        error: "Escreva uma pergunta."
+      });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "A chave do Gemini não está configurada no servidor."
+      });
+    }
+
+    const contents = [];
+
+    if (Array.isArray(history)) {
+      for (const item of history.slice(-10)) {
+        if (
+          item &&
+          typeof item.content === "string" &&
+          item.content.trim() &&
+          ["user", "model"].includes(item.role)
+        ) {
+          contents.push({
+            role: item.role,
+            parts: [{ text: item.content }]
+          });
+        }
+      }
+    }
+
+    contents.push({
+      role: "user",
+      parts: [{ text: message.trim() }]
+    });
+
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{
+              text: `És o TecnISAC, um assistente de IA especializado em
+tecnologia, eletrónica, software e reparação de dispositivos Android.
+
+Responde sempre em português claro, adaptando a explicação à pergunta.
+
+Para problemas técnicos:
+1. Identifica o problema apresentado.
+2. Explica as causas possíveis.
+3. Indica os testes necessários.
+4. Apresenta soluções passo a passo.
+5. Explica como confirmar se a solução funcionou.
+
+Quando útil, apresenta esquemas, tabelas, listas de ferramentas
+e exemplos de comandos ou código.
+
+Analisa as informações disponíveis antes de concluir.
+Distingue factos de hipóteses e não inventes medições,
+especificações, resultados de testes ou informações técnicas.
+Se faltarem dados importantes, faz perguntas concretas.
+Prioriza procedimentos seguros e explica os riscos relevantes.
+
+Não afirmes que executaste testes ou reparações que não fizeste.
+Dá respostas úteis, organizadas e suficientemente detalhadas.`
+            }]
+          },
+          contents,
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 4096
+          }
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Erro Gemini:", data);
+
+      return res.status(502).json({
+        error: "Não foi possível obter resposta do Gemini.",
+        details: data.error?.message || "Erro no serviço de IA."
+      });
+    }
+
+    const answer = data.candidates?.[0]?.content?.parts
+      ?.map(part => part.text || "")
+      .join("")
+      .trim();
+
+    if (!answer) {
+      return res.status(502).json({
+        error: "O Gemini não devolveu uma resposta."
+      });
+    }
+
+    return res.status(200).json({
+      answer,
+      text: answer,
+      status: "success"
+    });
+
+  } catch (error) {
+    console.error("Erro no chat:", error);
+
+    return res.status(500).json({
+      error: "Erro interno ao processar a pergunta."
+    });
+  }
+}
